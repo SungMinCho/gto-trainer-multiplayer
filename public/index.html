@@ -3630,9 +3630,33 @@ H.WORKER_SRC = "// ===== core: cards, combos, classes, evaluator, ranges, rng ==
   'use strict';
   var ctx = null, master = null, noise = null, on = true;
   try { on = localStorage.getItem('hl:snd') !== '0'; } catch (e) { }
-  // the audio context can only start after a click or key press; until then nothing plays
+  // iPhone/iPad: with the ring/silent switch on silent, Safari mutes Web Audio unless the page's audio counts as media
+  // playback. Newer Safari exposes that choice (navigator.audioSession); older iOS is moved there by keeping a silent
+  // <audio> element playing while sound is on. Sound can always be turned off in the app.
+  var IOS = typeof navigator !== 'undefined' && (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+  var silentEl = null;
+  function silentWav() {
+    var n = 1600, b = new Uint8Array(44 + n), d = new DataView(b.buffer), w = function (o, t) { for (var i = 0; i < t.length; i++) b[o + i] = t.charCodeAt(i); };
+    w(0, 'RIFF'); d.setUint32(4, 36 + n, true); w(8, 'WAVEfmt '); d.setUint32(16, 16, true); d.setUint16(20, 1, true); d.setUint16(22, 1, true);
+    d.setUint32(24, 8000, true); d.setUint32(28, 8000, true); d.setUint16(32, 1, true); d.setUint16(34, 8, true); w(36, 'data'); d.setUint32(40, n, true);
+    for (var k = 44; k < b.length; k++) b[k] = 128;
+    var str = ''; for (var q = 0; q < b.length; q++) str += String.fromCharCode(b[q]);
+    return 'data:audio/wav;base64,' + btoa(str);
+  }
+  function session(want) {
+    try { if (navigator.audioSession) { navigator.audioSession.type = want ? 'playback' : 'auto'; return; } } catch (e) { }
+    if (!IOS) return;
+    try {
+      if (want) {
+        if (!silentEl) { silentEl = document.createElement('audio'); silentEl.setAttribute('x-webkit-airplay', 'deny'); silentEl.setAttribute('playsinline', ''); silentEl.loop = true; silentEl.src = silentWav(); }
+        var pr = silentEl.play(); if (pr && pr.catch) pr.catch(function () { });
+      } else if (silentEl) silentEl.pause();
+    } catch (e) { }
+  }
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', function () { if (document.hidden && silentEl) silentEl.pause(); });
+  // the audio context can only start after a tap, click or key press; until then nothing plays
   function ac() {
-    if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return ctx; }
+    if (ctx) { if (ctx.state !== 'running') { try { ctx.resume(); } catch (e) { } } return ctx; }
     var A = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
     if (!A) return null;
     try { ctx = new A(); } catch (e) { return null; }
@@ -3676,8 +3700,13 @@ H.WORKER_SRC = "// ===== core: cards, combos, classes, evaluator, ranges, rng ==
   };
   H.SFX = {
     isOn: function () { return on; },
-    set: function (v) { on = !!v; try { localStorage.setItem('hl:snd', on ? '1' : '0'); } catch (e) { } if (on) ac(); },
-    unlock: function () { if (on) ac(); },
+    set: function (v) {
+      on = !!v; try { localStorage.setItem('hl:snd', on ? '1' : '0'); } catch (e) { }
+      session(on);
+      if (on) ac(); else if (ctx && ctx.state === 'running') { try { ctx.suspend(); } catch (e) { } }
+    },
+    // called on every tap / click / key press: (re)starts audio, which browsers allow only inside a user gesture
+    unlock: function () { if (!on) return; session(true); ac(); },
     play: function (name, delayMs, a, b) {
       if (!on || !ctx || ctx.state !== 'running') return;
       try { S[name](ctx.currentTime + 0.01 + (delayMs || 0) / 1000, a, b); } catch (e) { }
