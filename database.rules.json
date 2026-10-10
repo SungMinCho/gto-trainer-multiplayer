@@ -1,0 +1,31 @@
+{
+  "rules": {
+    "tables": {
+      "$code": {
+        ".read": "$code.matches(/^t-[a-z0-9]{4,12}$/)",
+        "peers": {
+          "$peer": {
+            ".write": "$code.matches(/^t-[a-z0-9]{4,12}$/)",
+            ".validate": "newData.hasChildren(['j', 't']) && newData.child('j').isString() && newData.child('j').val().length < 16000"
+          }
+        }
+      }
+    },
+    "lobby": {
+      ".read": true,
+      ".indexOn": ["t"],
+      "$code": {
+        ".write": "$code.matches(/^t-[a-z0-9]{4,12}$/)",
+        ".validate": "newData.hasChildren(['n', 'b', 't']) && newData.child('nm').val().length < 40"
+      }
+    },
+    "saved": {
+      ".read": true,
+      ".indexOn": ["savedAt"],
+      "$code": {
+        ".write": "$code.matches(/^t-[a-z0-9]{4,12}$/)",
+        ".validate": "newData.hasChildren(['j', 'savedAt']) && newData.child('j').isString() && newData.child('j').val().length < 16000"
+      }
+    }
+  }
+}

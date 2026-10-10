@@ -1,0 +1,17 @@
+# Every push to main deploys public/ to Firebase Hosting (live), using the service account stored in the
+# repository secret FIREBASE_SERVICE_ACCOUNT. Database rules are not deployed here (run ./deploy.sh for those).
+name: Deploy to Firebase Hosting
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: gto-trainer-multiplayer
+          channelId: live
