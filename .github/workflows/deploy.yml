@@ -10,6 +10,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # fails early with a clear message when the credential is not visible to this run (prints only its length)
+      - name: Check the deploy credential
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then echo "::error::FIREBASE_SERVICE_ACCOUNT is empty or not visible to this run"; exit 1; fi
+          echo "FIREBASE_SERVICE_ACCOUNT is present (${#SA} characters)"
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
