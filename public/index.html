@@ -3644,25 +3644,39 @@ H.WORKER_SRC = "// ===== core: cards, combos, classes, evaluator, ranges, rng ==
     return 'data:audio/wav;base64,' + btoa(str);
   }
   function session(want) {
-    try { if (navigator.audioSession) { navigator.audioSession.type = want ? 'playback' : 'auto'; return; } } catch (e) { }
+    try { if (navigator.audioSession) navigator.audioSession.type = want ? 'playback' : 'auto'; } catch (e) { }
     if (!IOS) return;
+    // on iPhone also keep a silent media track playing (works on every iOS version, with or without audioSession)
     try {
       if (want) {
-        if (!silentEl) { silentEl = document.createElement('audio'); silentEl.setAttribute('x-webkit-airplay', 'deny'); silentEl.setAttribute('playsinline', ''); silentEl.loop = true; silentEl.src = silentWav(); }
-        var pr = silentEl.play(); if (pr && pr.catch) pr.catch(function () { });
+        if (!silentEl) {
+          silentEl = document.createElement('audio');
+          silentEl.setAttribute('x-webkit-airplay', 'deny'); silentEl.setAttribute('playsinline', ''); silentEl.setAttribute('aria-hidden', 'true');
+          silentEl.loop = true; silentEl.preload = 'auto'; silentEl.src = silentWav(); silentEl.style.display = 'none';
+          (document.body || document.documentElement).appendChild(silentEl);
+        }
+        if (silentEl.paused) { var pr = silentEl.play(); if (pr && pr.catch) pr.catch(function () { }); }
       } else if (silentEl) silentEl.pause();
     } catch (e) { }
   }
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', function () { if (document.hidden && silentEl) silentEl.pause(); });
   // the audio context can only start after a tap, click or key press; until then nothing plays
+  // a one-sample silent sound started inside the tap: older iPhones only unlock audio when something actually plays
+  function kick() { try { var b = ctx.createBuffer(1, 1, ctx.sampleRate), src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination); src.start(0); } catch (e) { } }
   function ac() {
-    if (ctx) { if (ctx.state !== 'running') { try { ctx.resume(); } catch (e) { } } return ctx; }
+    if (ctx) { if (ctx.state !== 'running') { try { ctx.resume(); } catch (e) { } kick(); } return ctx; }
     var A = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
     if (!A) return null;
     try { ctx = new A(); } catch (e) { return null; }
-    master = ctx.createGain(); master.gain.value = 0.45; master.connect(ctx.destination);
+    // a limiter keeps overlapping chips from clipping, so the level can suit a phone speaker
+    var lim = ctx.createDynamicsCompressor ? ctx.createDynamicsCompressor() : null;
+    master = ctx.createGain(); master.gain.value = IOS ? 1.0 : 0.6;
+    if (lim) { lim.threshold.value = -6; lim.knee.value = 6; lim.ratio.value = 12; lim.attack.value = 0.002; lim.release.value = 0.12; master.connect(lim); lim.connect(ctx.destination); }
+    else master.connect(ctx.destination);
     var len = (ctx.sampleRate * 0.6) | 0; noise = ctx.createBuffer(1, len, ctx.sampleRate);
     var d = noise.getChannelData(0); for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    try { ctx.resume(); } catch (e) { }
+    kick();
     return ctx;
   }
   function env(g, t, a, peak, dec) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + dec); }
@@ -3710,6 +3724,17 @@ H.WORKER_SRC = "// ===== core: cards, combos, classes, evaluator, ranges, rng ==
     play: function (name, delayMs, a, b) {
       if (!on || !ctx || ctx.state !== 'running') return;
       try { S[name](ctx.currentTime + 0.01 + (delayMs || 0) / 1000, a, b); } catch (e) { }
+    },
+    // from a button: turn sound on, play a sample right away, and report what the browser says about audio
+    test: function (report) {
+      H.SFX.set(true); session(true); var c = ac();
+      if (!c) { report('이 브라우저는 소리 재생(Web Audio)을 지원하지 않아요'); return; }
+      try { S.chips(c.currentTime + 0.05, 5); S.turn(c.currentTime + 0.45); } catch (e) { }
+      setTimeout(function () {
+        var st = c.state, as = '';
+        try { as = navigator.audioSession ? navigator.audioSession.type : '없음'; } catch (e) { as = '?'; }
+        report('오디오 상태: ' + (st === 'running' ? '재생 중' : st) + ' · 세션: ' + as + (IOS ? ' · 무음 우회: ' + (silentEl && !silentEl.paused ? '켜짐' : '꺼짐') : '') + (st === 'running' ? ' — 칩 소리와 알림음이 들렸어야 해요. 안 들리면 볼륨 버튼으로 미디어 볼륨을 올려 보세요' : ''));
+      }, 600);
     }
   };
 })(H);
@@ -4188,7 +4213,7 @@ H.WORKER_SRC = "// ===== core: cards, combos, classes, evaluator, ranges, rng ==
       var me = mySeat(), seat = me >= 0 ? st.seats[me] : null;
       html += '<div class="menu" id="menu">' +
         '<div class="mn-n">' + (app.solo ? '' : '<button class="btn sm" id="copy2">링크 복사</button>') + (t.hs ? '<button class="btn sm" id="shuf2"' + shufAttr + '>자리 셔플</button>' : '') + revealBtnHTML('reveal2') + '</div>' +
-        '<label class="toggle"><input type="checkbox" id="sndOn"' + (H.SFX.isOn() ? ' checked' : '') + '>소리 (베팅·카드·내 차례 알림)</label>' +
+        '<div class="row" style="gap:8px;align-items:center"><label class="toggle"><input type="checkbox" id="sndOn"' + (H.SFX.isOn() ? ' checked' : '') + '>소리 (베팅·카드·내 차례 알림)</label><button class="btn sm" id="sndTest">소리 테스트</button></div>' +
         '<div class="field" style="margin:0"><label for="nm2">닉네임</label><div class="row"><input class="input" id="nm2" maxlength="12" value="' + esc(app.nm) + '" style="flex:1"><button class="btn sm" id="nmSave">저장</button></div></div>' +
         (seat ? '<label class="toggle"><input type="checkbox" id="sitout"' + (seat.out ? ' checked' : '') + '>자리 비움 (다음 핸드부터 빠지기)</label><button class="btn sm" id="stand">일어서기</button>' : '') +
         (st.seats.some(function (x) { return x && x.bot; }) ? '<button class="btn sm" id="kickAll">봇 모두 내보내기</button>' : '') +
@@ -4210,6 +4235,7 @@ H.WORKER_SRC = "// ===== core: cards, combos, classes, evaluator, ranges, rng ==
       var sndToggle = function (v) { H.SFX.set(v); if (v) H.SFX.play('chips', 30, 3); top.__html = ''; render(); };
       $('#sndBtn').onclick = function () { sndToggle(!H.SFX.isOn()); };
       var so2 = $('#sndOn'); if (so2) so2.onchange = function (e) { sndToggle(e.target.checked); };
+      var stb = $('#sndTest'); if (stb) stb.onclick = function () { H.SFX.test(function (msg) { toast(msg); top.__html = ''; render(); }); };
       $('#menuBtn').onclick = function () { app.menu = !app.menu; top.__html = ''; render(); };
       if (app.menu && st) {
         $('#nmSave').onclick = function () { var v = $('#nm2').value.trim().slice(0, 12); if (!v) return; app.nm = v; LS.set('nm', v); t.setName(v); toast('이름을 바꿨어요'); };
